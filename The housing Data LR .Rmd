@@ -1,0 +1,223 @@
+---
+title: "LR on Toyota dataset"
+author: "Charles"
+date: "7/16/2020"
+output: html_document
+---
+
+```{r}
+rm(list =ls(all=TRUE))
+```
+## Agenda 
+* Data preprocessing 
+* Model the data
+* Evaluation and Communication
+
+### Reading & understanding the data
+```{r cars}
+data = read.csv(file="/Users/mac/Desktop/data/HousingData.csv", header = TRUE, na.strings = c('NA','?'))
+```
+
+1) __CRIM :__ Per capita Crime rate by town
+
+2) __ZN :__ Proportion of residential land zoned for lots over 25,000 sq.ft.
+
+3) __INDUS :__ Proportion of non-retail business acres per town
+
+4) __CHAS :___ Charles River dummy variable (= 1 if tract bounds river; 0 otherwise)
+
+5) __NOX :__ nitric oxides concentration (parts per 10 million)
+
+6) __RM :__ average number of rooms per dwelling
+
+7) __AGE :__ proportion of owner-occupied units built prior to 1940
+
+8) __DIS :__ weighted distances to five Boston employment centres
+
+9) __RAD :__ index of accessibility to radial highways
+
+10) __TAX :__ full-value property-tax rate per $10,000
+
+11) __PTRATIO :__ pupil-teacher ratio by town
+
+12) __B :__ 1000(Bk - 0.63)^2 where Bk is the proportion of African-Americans by town
+
+13) __LSTAT :__ Percentage of the population in the lower economic status 
+
+14) __MEDV  :__ Median value of owner-occupied homes in multiples of $1000
+
+```{r}
+colnames(data)     # Display the column names
+str(data)          # Structure of the dataset
+nrow(data)         # Number of rows in the dataset
+ncol(data)         # Number of columns in the dataset
+summary(data)      # Summary of the dataset
+head(data)
+```
+##Plotting relationships between the variables 
+
+```{r fig.height=8, fig.width=9}
+
+par(mfrow=c(2,2))
+plot(data$LSTAT, data$MV, xlab = "Percentage of people in the lower economic strata", ylab = "Median House Price", main = "Housing Price vs Status")
+
+plot(data$CRIM, data$MV,  xlab = "Per capita crime by town", ylab = "Median House Price", main = "Housing Price vs Per Capita Crime")
+
+plot(data$NOX, data$MV, xlab = "Nitric Oxide Concentration in ppm", ylab = "Median House Price",  main = "Housing Price vs NOX concentration in ppm")
+
+plot(data$RM, data$MV, xlab = "average number of rooms per dwelling", ylab = "Median House Price",  main = "Housing Price vs average number of rooms per dwelling")
+```
+
+
+
+
+
+```{r fig.height=3, fig.width=4}
+corel <- cor(data, use = 'complete.obs')
+library(corrplot)
+corrplot(corel, method = "circle", type = "upper")
+```
+###check for missing values
+```{r}
+colSums(is.na(data))
+```
+
+```{r}
+data$CHAS <- as.factor(data$CHAS)
+str(data)
+```
+###Intuition - There's a negative correlation; When age increase, price reduces
+
+```{r}
+set.seed(123)
+
+# the "sample()" function helps us to randomly sample 70% of the row indices of the dataset
+train_rows <- sample(x = 1:nrow(data), size = 0.7*nrow(data))
+train_rows
+# We use the above indices to subset the train and test sets from the data
+
+train_data <- data[train_rows, ]
+
+test_data <- data[-train_rows, ]
+
+dim(train_data)
+dim(test_data)
+```
+##Missing values check
+```{r}
+cat("Missing values in Train Data \n ")
+colSums(is.na(train_data))
+cat("Missing values in Test Data \n ")
+colSums(is.na(test_data))
+```
+###Imputing the missing values 
+```{r}
+install.packages('DMwR')
+library(DMwR)
+sum(is.na(train_data))
+sum(is.na(test_data))
+train_data <-centralImputation(train_data)
+test_data <- centralImputation(test_data)
+sum(is.na(train_data))
+sum(is.na(test_data))
+```
+### ##Standardizing the data
+```{r}
+# Subset the dataframe that will be standardized
+install.packages("dplyr")
+library(dplyr)
+colnames(train_data)
+str(train_data)
+
+train_data_ns <- train_data[c("MV","CHAS")]
+train_data_s  <- train_data[c("CRIM","ZN","INDUS","NOX","RM","AGE","DIS","RAD","TAX","PT","B","LSTAT")]
+
+test_data_ns <- test_data[c("MV","CHAS")]
+test_data_s <- test_data[c("CRIM","ZN","INDUS","NOX","RM","AGE","DIS","RAD","TAX","PT","B","LSTAT")]
+```
+
+ 
+```{r}
+install.packages("vegan")
+library(vegan)
+summary(train_data)
+# Using Z score method
+train_data_s <- decostand(x =train_data_s, method ="standardize", MARGIN = 2)
+test_data_s <- decostand(x =test_data_s, method ="standardize", MARGIN = 2)
+train_data = cbind(train_data_ns,train_data_s)
+test_data = cbind(test_data_ns, test_data_s)
+summary(train_data)
+summary(test_data)
+```
+
+
+```{r}
+start_time = Sys.time()
+model_basic <- lm(formula = MV~. , data =(train_data))
+end_time = Sys.time()
+time_taken = end_time - start_time
+time_taken
+```
+
+```{r}
+summary(model_basic)
+
+
+```
+
+
+```{r}
+par(mfrow = c(2,2))
+
+plot(model_basic)
+```
+# Influential Observations 
+## Leverage
+
+```{r}
+install.packages('car')
+library(car)
+
+lev= hat(model.matrix(model_basic))
+plot(lev)
+```
+ Suppose we would like to remove records with leverage values greater than 0.3
+ 
+```{r}
+train_data_lev<-train_data[lev>0.12, ]
+dim(train_data_lev)
+
+## Method: Convention - If there are n data points and p parameters, then threshold can be taken a 3*p/n
+```
+
+# Cook's distance 
+
+* Identifying influential observations and handling them
+
+```{r}
+# Identify records with high Cook's distance
+cook = cooks.distance(model_basic)
+#cook
+plot(cook,ylab="Cook's distances")
+train_cook<-train_data[cook<.5,]
+dim(train_cook)
+```
+* Model building after removing influential observations
+
+```{r}
+model_basic2 <- lm(formula = MV~. , data = train_cook)
+summary(model_basic2)
+```
+* Observation: Adjusted R^2 did not change much
+
+
+
+```{r}
+# Error verification on train data
+
+regr.eval(train_data$MV, model_basic$fitted.values)
+```
+```{r}
+
+```
+
